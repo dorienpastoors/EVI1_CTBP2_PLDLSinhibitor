@@ -1,6 +1,6 @@
 # EVI1_CTBP2_PLDLSinhibitor
 
-This is all custom R and python code associated with our manuscript:
+This is all custom R and python code used in our manuscript:
 "Oncogene EVI1 Drives Acute Myeloid Leukemia Via a Targetable Interaction with CTBP2"
 
 ## AlphaFold
