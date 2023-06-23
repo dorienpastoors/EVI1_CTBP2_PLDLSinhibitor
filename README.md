@@ -13,4 +13,7 @@ This is all custom R and python code associated with our manuscript:
 * data for script is normally generated from BAM files
 * for the purpose of recreating the plots a count matrix of associated files is also uploaded
 
-  
+## Data availability
+* open data is available on Zenodo
+* this includes all tables for flow cytometry, luciferase measurements (in vivo and for MAPPIT assay) and mass-spec results
+* all predicted alphafold structures are available on Zenodo
