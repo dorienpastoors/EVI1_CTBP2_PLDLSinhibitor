@@ -7,7 +7,7 @@ This is all custom R and python code associated with our manuscript:
 
 * Data for script (the predicted structures, as well as the ChimeraX output) is available on Zenodo INSERT DOI
 * chimerax_quantification.RMD is the R script required to generate the input for the AlphaFold heatmaps
-* python_cmds_chimerax_*.py are python scripts for quantification of interaction. Running these scripts within ChimeraX will generate interaction tables like the ones available for this project
+* python_cmds_chimerax_*.py are python scripts for quantification of interaction. Running these scripts *within* ChimeraX will generate interaction tables like the ones available for this project. 
 
 ## ChIP-seq correlation plots
 * data for script is normally generated from BAM files
