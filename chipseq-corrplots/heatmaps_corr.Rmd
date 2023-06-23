@@ -1,0 +1,307 @@
+---
+title: "EVI1 vs CTBP - hexplots"
+output:
+  html_document:
+    toc: yes
+    toc_float: true
+    df_print: paged
+  html_notebook:
+    toc: yes
+    toc_float: true
+---
+
+
+
+Dorien Pastoors "`r format(Sys.time(), '%d %B, %Y')`"
+ 
+# Description and purpose
+
+Script for generating correlation HEX plots for chipseq data
+
+## Data availability
+
+## outline
+
+Actually this is very simple. It works as follows:
+
+* Get peaks from peakfile (.narrowpeak) for the reference factor
+* Use these peaks as regions for Diffbind to count reads in other tracks of interest
+* Normalise counts
+* Plot with geom_hex
+
+
+***
+
+# Preparing the workspace
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+
+library(ggrepel)
+library(vsn)
+library(tidyverse)
+library(ggpubr)
+
+library(MetBrewer)
+library(ChIPpeakAnno)
+library(rtracklayer)
+library(genomation)
+#library(genomationData)
+library(DiffBind)
+library(ggpmisc)
+
+
+options(bitmapType = 'cairo')
+
+
+
+peakfile_directory <- "/data/dorien/EVI1_target_gene_discovery/chip_compareEVI1_CtBP peaks/peakfiles_dorien_input_corrected"
+
+
+
+evi1_refpeaks_path <- "EVI1_Mutz3_peaks.narrowPeak"
+
+ctbp2_refpeaks_path <- "CTBP_Mutz3_peaks.narrowPeak"
+
+hiroshige <- met.brewer("Hiroshige", n = 10)
+
+hiroshige
+
+```
+
+# design tables
+
+Import design table that points to all the BAM files that you want to compare to your reference.
+
+```{r}
+design_all_v2 <- read.table("design_allTracks_v2.txt")
+
+design_all_v2$factor <- factor(design_all_v2$factor, levels = c("EVI1", "CTBP2", "H3K27Ac", "H3K27Me3", "H3K9Me3", "MYB", "P300", "RUNX1", "ERG", "CTCF", "GATA2"))
+
+design_all_v2 <- design_all_v2%>%arrange(factor)
+
+sampleSheet_all_v2 <- design_all_v2 %>% 
+  dplyr::select(SampleID = name, Factor = factor, Tissue = cells, Treatment = treatment, bamReads = bamfile)
+
+```
+
+
+# Import EVI1 peaks
+
+Using the peak file, we can determine in which windows diffbind should count reads in our BAM files.
+
+```{r refpeaks evi1}
+refpeaks = readGeneric(evi1_refpeaks_path, meta.cols = 
+                         list(name = 4, signalValue = 7, minLog10Pval = 8, minLog10QVal = 9))
+
+refpeaks = refpeaks[order(-refpeaks$signalValue)]
+
+refpeaks_quant <- resize(refpeaks, width = 2000, fix = "center")
+```
+
+# Count reads in EVI1 peaks 
+
+This can only run locally if the paths in the design table to the bam files actually is the correct paths to the indicated bam files.  For now, we will just import the count matrix that was generated in this way.
+
+```{r create dba object evi, eval=FALSE}
+dba_allTracks <- dba(sampleSheet = sampleSheet_all_v2)
+
+dba_allTracks <- dba.count(dba_allTracks, peaks = refpeaks_quant)
+
+dba_allTracks <- dba.normalize(dba_allTracks)
+
+countTable_EVI1Peaks <- dba.peakset(dba_allTracks, bRetrieve=TRUE, DataType = DBA_DATA_FRAME)
+
+write.table(countTable_EVI1Peaks, file = "counts_EVI1peaks.txt")
+
+
+```
+
+**Read the count matrices**
+
+```{r}
+
+cts_EVI1 <- read.table(file = "counts_EVI1peaks.txt")
+
+
+```
+
+
+
+# Try plotting
+
+```{r plot tryouts, fig.width=4.5, fig.height=3}
+# plot try-outs
+
+ggplot(data = cts_EVI1, aes(y = MUTZ3_EVI1+1, x = MUTZ3_CTBP2+1))+
+  geom_hex()+ theme_bw()+
+  scale_fill_viridis_c()+
+  scale_x_log10() + scale_y_log10()+
+  geom_smooth( method = "lm")
+```
+
+
+now i would also like to add the correlation.
+either directly on the graph or in the title.
+
+## adding correlation in different ways
+
+```{r plot tryouts add corr, fig.width=4.5, fig.height=3}
+# try to print correlation on plot: two ways
+
+lm_res <- lm(y ~x, data = data.frame(y = log10(cts_EVI1$MUTZ3_CTBP2+1), x = log10(cts_EVI1$MUTZ3_EVI1+1)))
+
+formulaString <- paste0("y = ", round(lm_res$coefficients[[2]], 2), "x",
+                        ifelse(sign(lm_res$coefficients[[1]])== -1, " - ", " + "),
+                        round(abs(lm_res$coefficients[[1]]), 2))
+
+Rsq <- round(summary(lm_res)$adj.r.squared, 2)
+
+
+last_plot()+  
+  stat_poly_eq(formula = y ~x, aes(label = after_stat(eq.label))) +
+  stat_poly_eq(label.y = 0.9) +
+  ggtitle(bquote('Adj.  '~R^2 ~" = "~ .(Rsq)), 
+          subtitle = formulaString)
+
+
+```
+
+# Generate all evi1 plots
+
+```{r plot dotplots evi, message=FALSE, results='hide'}
+resultCols <- colnames(cts_EVI1)[grepl("MUTZ3_", colnames(cts_EVI1))&
+                                               !grepl("EVI1",colnames(cts_EVI1))]
+
+for(i in resultCols){
+  
+  print(i)
+  
+  data_temp = data.frame(x = cts_EVI1[,i]+1, 
+                    y = cts_EVI1$MUTZ3_EVI1+1)
+  
+  data_log10 = log10(data_temp)
+  
+  lm_res <- lm(y ~x, data = data_log10)
+  
+  formulaString <- paste0("y = ", round(lm_res$coefficients[[2]], 2), "x",
+                          ifelse(sign(lm_res$coefficients[[1]])== -1, " - ", " + "),
+                          round(abs(lm_res$coefficients[[1]]), 2))
+  
+  Rsq <- round(summary(lm_res)$adj.r.squared, 2)
+  
+  ggplot(data = data_temp, aes(x = x, y = y))+
+    geom_hex()+
+    #geom_point(alpha = 0.05)+ 
+    theme_bw()+
+    #scale_fill_viridis_c()+
+    scale_fill_gradientn(colors=met.brewer("Hiroshige")[10:1])+
+    scale_x_log10() + scale_y_log10()+
+    ylab("EVI1 + 1")+ xlab(paste0(gsub("MUTZ3_", "", i), "  + 1"))+
+    geom_smooth( method = "lm", color = "black")+
+    ggtitle(bquote('Adj.  '~R^2 ~" = "~ .(Rsq)), 
+            subtitle = formulaString)+
+    theme(legend.position = "bottom")
+  
+  file_suffix <- paste0("plots/corPlot_EVI1ref_", i)
+  ggsave(filename = paste0(file_suffix, ".png"), width = 2.3, height = 3.2)
+  ggsave(filename = paste0(file_suffix, ".pdf"), width = 2.3, height = 3.2)
+}
+```
+
+
+```{r plot dotplots evi example, fig.width=2.3, fig.height=3.2}
+last_plot()
+
+#ggsave("test_plot.png", width = 4.5, height = 4)
+
+```
+
+
+
+
+# Import CTBP2 peaks
+
+```{r refpeaks CTBP}
+refpeaks_ctbp = readGeneric(ctbp2_refpeaks_path, meta.cols = list(name = 4, signalValue = 7, minLog10Pval = 8, minLog10QVal = 9))
+
+
+refpeaks_ctbp = refpeaks_ctbp[order(-refpeaks_ctbp$signalValue)]
+
+refpeaks_ctbp_quant <- resize(refpeaks_ctbp, width = 2000, fix = "center")
+```
+
+# Count reads in CTBP2 peaks
+
+```{r create dba object ctbp, eval=FALSE}
+dba_allTracks_ctbp <- dba(sampleSheet = sampleSheet_all_v2)
+
+dba_allTracks_ctbp <- dba.count(dba_allTracks_ctbp, peaks = refpeaks_quant)
+
+dba_allTracks_ctbp <- dba.normalize(dba_allTracks_ctbp)
+
+countTable_CTBPPeaks <- dba.peakset(dba_allTracks_ctbp, bRetrieve=TRUE, DataType = DBA_DATA_FRAME)
+
+write.table(countTable_CTBPPeaks, "counts_CTBP2peaks.txt")
+
+```
+
+
+**Read count matrix CTBP2**
+
+```{r plot import cts, message=FALSE, results='hide'}
+cts_CTBP2 <- read.table("counts_CTBP2peaks.txt")
+```
+
+
+# All plots CTBP2
+
+```{r plot dotplots ctbp, message=FALSE, results='hide'}
+resultCols <- colnames(cts_CTBP2)[grepl("MUTZ3_", colnames(cts_CTBP2))&
+                                               !grepl("CTBP",colnames(cts_CTBP2))]
+
+for(i in resultCols){
+  
+  print(i)
+  
+  data_temp = data.frame(x = cts_CTBP2[,i]+1, 
+                    y = cts_CTBP2$MUTZ3_CTBP2+1)
+  
+  data_log10 = log10(data_temp)
+  
+  lm_res <- lm(y ~x, data = data_log10)
+  
+  formulaString <- paste0("y = ", round(lm_res$coefficients[[2]], 2), "x",
+                          ifelse(sign(lm_res$coefficients[[1]])== -1, " - ", " + "),
+                          round(abs(lm_res$coefficients[[1]]), 2))
+  
+  Rsq <- round(summary(lm_res)$adj.r.squared, 2)
+  
+  ggplot(data = data_temp, aes(x = x, y = y))+
+    geom_hex()+
+    #geom_point(alpha = 0.05)+ 
+    theme_bw()+
+    #scale_fill_viridis_c()+
+    scale_fill_gradientn(colors=met.brewer("Hiroshige")[10:1])+
+    scale_x_log10() + scale_y_log10()+
+    ylab("CTBP2 + 1")+ xlab(paste0(gsub("MUTZ3_", "", i), "  + 1"))+
+    geom_smooth( method = "lm", color = "black")+
+    ggtitle(bquote('Adj.  '~R^2 ~" = "~ .(Rsq)), 
+            subtitle = formulaString)+
+    theme(legend.position = "bottom")
+  
+  file_suffix <- paste0("plots/corPlot_CTBP2ref_", i)
+  ggsave(filename = paste0(file_suffix, ".png"), width = 2.3, height = 3.2)
+  ggsave(filename = paste0(file_suffix, ".pdf"), width = 2.3, height = 3.2)
+}
+```
+
+
+```{r plot dotplots ctbp2, fig.width=2.3 , fig.height=3.2}
+last_plot()
+
+
+```
+
+thats it :)
+
