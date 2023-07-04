@@ -18,7 +18,7 @@ This is all custom R and python code used in our manuscript:
 * this includes all tables for flow cytometry, luciferase measurements (in vivo and for MAPPIT assay) and mass-spec results
 * all predicted alphafold structures are available on Zenodo
 
-## Data location
+## Data availability per figure panel
 
 | figure panel         | data type                      | location                                                                   | accession                                                                  | name_supplementary_data                                                                      | data format                              |
 | -------------------- | ------------------------------ | -------------------------------------------------------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------- |
