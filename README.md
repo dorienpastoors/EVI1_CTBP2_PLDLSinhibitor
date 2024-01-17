@@ -14,8 +14,9 @@ This is all custom R and python code used in our manuscript:
 * for the purpose of recreating the plots a count matrix of associated files is also uploaded
 
 ## Protein Alignment PLDLS sites
-* Data for script is available on ZENODO as well as in the input_data and input_biogrid folder on github. most of this data is public except for the MS data which was generated as part of this manuscript.
+* Data for script is available on ZENODO as well as in the input_data and input_biogrid folder on github. most of this data was already public except for the MS data which was generated as part of this manuscript.
 * phylo_tree_construction_bySim.RMD is the script to generate the cluster alignment plot
+* the proteins are in the input_data folder, the PLDLS sites +- 15AA are in the output_tables folder
 
 ## Data availability
 * open data is available on Zenodo
