@@ -1,0 +1,554 @@
+---
+title: "Visualising protein alignment PLDLS sites human proteome with ggplot"
+output:
+  html_document:
+    toc: yes
+    toc_float: true
+    df_print: paged
+  html_notebook:
+    toc: yes
+    toc_float: true
+---
+
+
+***
+
+**Dorien Pastoors `r format(Sys.time(), '%d %B, %Y')`**
+
+# Aim & Outline
+
+## Description
+
+Here I'm making a protein alignment of all PLDLS sites in the human proteome to see:
+
+* how varied the context of the PLDLS site is
+* how PLDLS containing proteins are expressed in MUTZ3
+* what the subcellular localisation is of these proteins
+* whether any of them have been reported as previous CTBP1/2 interactors
+
+Ultimately I've used these clusters to aid the interpretation of results of AlphaFold predictions where you can see some cluster contexts bind PLDLS much worse than others but this is not included here.
+
+## Workflow
+
+This figure basically consists of 4 plots that are generated separately (check output_plots for the PDFs that constitute the final plot). First, the multiple sequence alignment (MSA) is calculated and use this to determine pairwise distances for the cluster dendogram - the order of proteins in the dendogram is important for all other plots that follow.
+
+* Cluster Dendogram plot
+* Alignment Plot
+* Extra categorical data plot (localisation & BioGrid interactors)
+* Extra continuous data plot (protein abundance by MS)
+
+## Input
+
+I downloaded several datases that are required for these plots
+
+* Performed BLAST alignment on sequence PLDLS on the human refseq protein database (input_data/PLDLS_containing_human_proteins.fasta)
+* BIOGrid: to identify prevous interactors of CTBP1/2 (located in the folder input_biogrid)
+* subcellular location: downloaded from https://www.proteinatlas.org/about/download 
+* sim_phylo_hclust.txt: this is the order of the proteins as they appear in the cluster tree (this is copied from a PDF in the output files)
+
+
+# Preparing the workspace
+
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+# install packages
+
+if (!require("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+
+BiocManager::install("msa")
+
+
+install.packages("ggnewscale", "scales")
+```
+
+Loading required libraries
+
+```{r load libraries, message=FALSE}
+
+
+library(seqinr)
+library(stringr)
+library(tidyverse)
+library(ggrepel)
+library(gridExtra)
+library(reshape2)
+library(ggpubr)
+library(msa)
+library(ggnewscale)
+library(scales)
+library(seqinr)
+library(ape)
+library(biomaRt)
+
+options(bitmapType = 'cairo')
+
+```
+
+
+# Compute sequence alignment
+
+I'm using the fasta sequences from BLAST by aligning PLDLS to the human refseq protein db. 
+I'm using clustal omega for a sequence alignment using the msa package. (this is what Benchling uses as well). I'm extracting the protein sequences after alignment, together with the initial protein names. 
+
+## Extract 15bp around PLDLS sites
+
+```{r seq alignment}
+sequences <- readAAStringSet("input_data/PLDLS_containing_human_proteins.fasta")
+
+
+sequences <- sequences[!duplicated(names(sequences))]
+
+subsequences <- AAStringSet()
+
+for(i in 1:length(sequences)){
+  
+  # locate PLDLS site in the amino acid string
+  # print(i)
+  temp1 <- sequences[i]
+  seq <- paste0(temp1)
+  seq_index <- str_locate_all(pattern = "PLDLS", seq)  # if there are multiple occurences, this seq_index will have 1 row for each occurence
+  
+  # if nothing is found, skip to the next iteration
+  if(nrow(seq_index[[1]])==0){next}
+  
+  # count patterns by nr of rows
+  for(j in 1:nrow(seq_index[[1]])){
+    
+    # print(j)
+    seq_start <- seq_index[[1]][j,1]-15
+    
+    # check if PLDLS -15 is not before the protein starts
+    if(is.na(seq_start)){next}
+    if(seq_start < 1){seq_start <- 1}
+    
+    # check if PLDLS + 15 is not beyond the end of the protein sequence
+    seq_end <- seq_index[[1]][j,2]+15
+    if(seq_end > nchar(seq)){seq_end <- nchar(seq)}
+    
+    # extract the amino acid letters of the resulting range
+    #print(paste0(seq_start, ":", seq_end))
+    seq_range <- c(seq_start:seq_end)
+    subsequence <- substr(seq, seq_start, seq_end)
+    seq_name <- strsplit(names(temp1), split = "\\|")
+    seq_name[[1]][3] <- strsplit(seq_name[[1]][3], split = " ")[[1]][1]
+    seq_name <- paste0(unlist(seq_name), collapse = "_")
+    
+    # name multiple motifs in the same protein with the n-th occurence
+    if(j>1){seq_name <- paste0(seq_name, "_motif", j)}
+    #print(seq_name)}
+    
+    names(subsequence) <- seq_name
+    
+    subsequences <- c(subsequences, subsequence)
+    
+    
+    }
+    
+    
+    
+  }
+
+subsequences
+
+```
+
+
+## Calculate MSA and distance matrix
+
+* MSA = multiple sequence alignment = the alignment of the PLDLS sites +- 15 AA
+* Distance matrix = pairwise distance matrix; per pair of sequences, how similar are they to each other? This is what is used to calculate dendograms (cluster graphs)
+
+```{r seq alignment msa}
+alignment <- msa(subsequences, "ClustalW")
+
+alignment_seqinr <- msaConvert(alignment, type = "seqinr::alignment")
+
+dist <- seqinr::dist.alignment(alignment_seqinr, matrix = "similarity")
+
+#as.matrix(dist)
+
+tree_subset <- nj(dist)
+
+clus <- hclust(d = dist)
+```
+
+## determine clusters
+
+```{r seq alignment clus}
+# the h argument controls the distance cutoff
+# but this is different for each distance measure
+# k controls the max number of clusters irrespective of the cutoff which is probably more useful 
+# I just picked 6 here, but as you can see I tried a number of different settings
+#clus_10 <- cutree(clus,k = 10)
+#clus_20<- cutree(clus, k = 20)
+clus_6<- cutree(clus, k = 6)
+
+
+png("output_plots/dendo_cluster_6_sim2.png", width = 750, height = 750)
+plot(clus, hang = -1)
+rect.hclust(clus, k = 6, cluster = clus_6)
+dev.off()
+```
+
+This plot shows the defined clusters 
+
+```{r seq alignment2 , fig.width=20, fig.height=7}
+plot(clus, hang = -1)
+rect.hclust(clus, k = 6, cluster = clus_6)
+
+
+```
+
+This plot is the same tree but now depicted in a prettier graph
+
+# Dendogram Plot
+
+```{r, width = 40, height = 40}
+
+pdf("output_plots/sim_phyl0_hclust_2.pdf", width = 8, height = 15)
+
+plot.phylo(as.phylo.hclust(clus), main="Phylogenetic Tree", 
+           use.edge.length = F)
+
+dev.off()
+
+
+
+
+```
+
+## fix names
+
+1. as you can see some gene ids are incomplete. For example, RBBP8, a polycomb component, is called: "sp Q8NC74 RB8NL HUMAN". I don't know exactly why this is the case - the BLAST output seems correct - but this needs to be corrected.
+So, i want to make a table with the gene identifiers from the uniprot IDs and also sort the protein alignment according to the cluster dendogram
+
+2. The order from this dendogram is critical, as all other plots will now conform to the same order. So I just hard-copied the text from the PDF file into a text file which sets the order of the genes for all other plots to come.
+
+
+```{r, fig.width=10, fig.height=8}
+
+
+aln_unique <- alignment@unmasked
+
+#write.table(x = names(aln_unique), file = "names.txt", quote = FALSE)
+
+# get the order from pdf file
+name_order <- read.table(file = "input_data/sim_phylo_hclust.txt", sep = "\t")
+
+name_order$V1 <- trimws(name_order$V1)
+
+name_order$V2 <- gsub(" ", "_", name_order$V1)
+
+
+names(aln_unique) %in%name_order$V2
+
+aln_unique_sorted <- aln_unique[match( name_order$V2, names(aln_unique))]
+
+```
+
+```{r}
+
+name_order <- name_order %>% separate(V1, into = c(NA, "uniprot", "geneID1", "org"), remove = FALSE)
+
+uniProt <- useMart("ENSEMBL_MART_ENSEMBL", dataset = "hsapiens_gene_ensembl")
+#listAttributes(useDataset("uniprot",mart=uniProt))   ## contains
+
+hgnc_symbols <- getBM(attributes= c("hgnc_symbol","uniprotswissprot"), filters = "uniprotswissprot", values = name_order$uniprot, mart = uniProt)
+
+name_order <- merge(name_order, hgnc_symbols, by.x = "uniprot", by.y = "uniprotswissprot", all.x = TRUE)
+
+name_order <- name_order %>%
+  mutate(hgnc_symbol = ifelse(grepl("motif2", x = V2), paste0(hgnc_symbol, "_motif2"), hgnc_symbol)) %>%
+  mutate(hgnc_symbol = ifelse(is.na(hgnc_symbol), uniprot, hgnc_symbol))
+
+name_order <- name_order[match(names(aln_unique_sorted), name_order$V2),]
+
+head(name_order)
+
+```
+
+
+## export PLDLS sites to fasta
+
+```{r}
+subsequences_exp <- subsequences
+
+#names(subsequences_exp)
+
+new_names <- name_order$hgnc_symbol[match(names(subsequences_exp), name_order$V2)]
+
+names(subsequences_exp) <- new_names
+
+writeXStringSet(x = subsequences_exp, filepath =  "output_tables/allPLDLSsites_human.fasta")
+```
+
+These are the sequences of the sites included for alphafold!
+
+# Protein alignment Plot
+
+Convert cluster info per gene to dataframe
+
+```{r}
+clus_df <- as.data.frame(clus_6)
+
+clus_df$name <- rownames(clus_df)
+
+clus_df <- merge(clus_df, name_order[,c(5,6)], by.x = "name", by.y = "V2")
+
+clus_df <- clus_df[match(names(aln_unique_sorted), clus_df$name),]
+
+clus_df$clus_6 <- factor(clus_df$clus_6)
+```
+
+
+```{r}
+aln_unique_sorted_names <- aln_unique_sorted
+
+names(aln_unique_sorted_names) <- name_order$hgnc_symbol
+
+df_aln <- data.frame(hgnc_symbol = names(aln_unique_sorted_names), aln_seq = paste0(aln_unique_sorted_names))
+
+df_aln$hgnc_symbol <- factor(df_aln$hgnc_symbol, levels = df_aln$hgnc_symbol)
+df_aln <- df_aln %>%
+  separate(col = aln_seq, remove = FALSE, sep = "", into = paste0("p", 1:40)) %>%
+  pivot_longer(cols = paste0("p", 1:40), names_to = "aln_pos", values_to = "AA") %>%
+  mutate(pos_num = as.numeric(gsub("p", "", aln_pos)))
+
+df_aln_c <- merge(df_aln, clus_df, by = "hgnc_symbol")
+
+```
+
+## alignment colors
+
+There are many ways to color amino acids - I got this one (CINEMA) from this website and slightly adjusted the colors (the original color from the website is behind the color here with # ) https://www.bioinformatics.nl/~berndb/aacolour.html 
+
+The way the amino acids match the colors is done with the temp vector. So the first 3 (H, K and R) become cadetblue, etc.
+
+```{r}
+
+#cinema
+
+cols_cinema <-  c(rep("cadetblue3", 3), # blue
+                  rep("firebrick3", 2),  #red
+                  rep("darkolivegreen4", 4), #green 
+                  rep("cornsilk", 5), #white
+                  rep("violet", 3) # magenta
+                  , rep("chocolate", 2), #brown
+                  rep("gold", 1), #yellow
+                  rep("grey78", 4)) # grey
+
+character_cinema <-  c(rep("polar_pos", 3), 
+                       rep("polar_neg", 2), 
+                       rep("polar_neutral", 4), 
+                       rep("nonpolar_aliphatic", 5), 
+                       rep("nonpolar_aromatic1", 3),
+                       rep("nonpolar_aromatic2", 2), 
+                       rep("nonpolar_aromatic3", 1), 
+                       rep("specialchars", 4))
+
+
+temp <- "HKRDESTNQAVLIMFWYPGCBZX-"
+temp <- str_split(temp, pattern = "")[[1]]
+
+names(cols_cinema) <- temp
+
+names(character_cinema) <- temp
+
+cols_cinema
+
+character_cinema
+
+```
+
+In this plot, the clusters are drawn at x = 0 with a large square geom_point (pch 15, size 7), which is colored with scale_**color**_manual. The amino acids are a geom_tile, which are colored with scale_**fill**_manual
+
+```{r, fig.height=10, fig.width=10}
+
+ggplot(data = df_aln_c, aes(x = pos_num, y = hgnc_symbol,  fill = AA, label = AA))+
+  
+  geom_point(aes(x = 0, color = clus_6), pch = 15, size = 7)+
+  geom_tile()+
+  geom_text()+  
+  scale_fill_manual(values = cols_cinema)+
+  scale_color_manual(values = MetBrewer::met.brewer(name = "Egypt", n = 6))+
+  scale_y_discrete(limits = rev(levels(df_aln$hgnc_symbol)))+
+  
+  theme_classic2()
+
+ggsave("output_plots/sim_alignment_ggplot.pdf", width = 10, height = 8)
+
+```
+
+# Protein Categorical Annotation Plot
+
+## Subcellular location
+
+download link for subcellular location: https://www.proteinatlas.org/about/download 
+
+```{r}
+loc <- read.table("input_data/subcellular_location.tsv", sep = "\t", header = TRUE) # i downloaded this from the human protein atlas
+
+
+# merge clustering with the location
+
+clus_df <- merge(clus_df, loc[,c(2,4)], by.x = "hgnc_symbol", by.y = "Gene.name", all.x = TRUE )
+
+clus_df <- clus_df[match(names(aln_unique_sorted), clus_df$name),]
+
+# make the hgnc symbol a factor in the order of the clustering tree
+# this is critical for the plotting order in ggplot 
+
+clus_df$hgnc_symbol <- factor(clus_df$hgnc_symbol, levels = clus_df$hgnc_symbol)
+
+# get all possible locations in the dataset
+
+all_locations <- paste0(clus_df$Main.location[!is.na(clus_df$Main.location)], collapse = ";")
+
+all_locations <- str_split_1(all_locations, pattern = ";")
+
+all_locations <- unique(all_locations)
+
+all_locations
+```
+
+
+so there are 10 locations in total: now we will convert the dataframe, that contains the data in an inconvenient format, to a matrix where for each combination of the gene and the location there is TRUE if that gene is indeed in thtat location or FALSE if its not
+
+
+```{r}
+
+mat <- matrix(ncol = 10, nrow = 41)
+
+colnames(mat) <- all_locations
+
+for(i in 1:length(clus_df$Main.location)){
+  
+  for(j in 1:length(all_locations)){
+    
+    mat[i,j] <- grepl(pattern = all_locations[j], x = clus_df$Main.location[i] )
+    
+    
+  }
+}
+
+df_loc <- as.data.frame(mat)
+
+df_loc$hgnc_symbol = clus_df$hgnc_symbol
+
+df_loc_l <- df_loc %>%pivot_longer(cols = !hgnc_symbol, names_to = "location", values_to = "present")
+
+
+df_loc_l$location <- factor(df_loc_l$location, levels = c("Nucleoplasm",  "Nuclear speckles" , "Nucleoli", "Centrosome" ,  "Cytosol" ,  "Golgi apparatus", "Endoplasmic reticulum"  ,        "Vesicles" ,  "Plasma membrane"  , "Cell Junctions"))
+
+head(df_loc_l)
+```
+
+## CTBP1/2 prev interactors
+
+We now also want to know if these 41 proteins have previously been reported to interact with CTBP1/2.
+I downloaded interaction data for CTBP1 and CTBP2 in the folder biogrid (the download is from biogrid) - I will now test if the proteins in my list are mentioned in the biogrdi table. Like with the location, this will result in two new columns that says whether it is a CTBP1 and CTBP2 interactor.
+
+```{r}
+paths <- list.files("~/protein_alignments/CTBP1_CTBP2/biogrid", full.names = TRUE)
+
+df_int <- data.frame(hgnc_symbol = name_order$hgnc_symbol, uniprot = name_order$uniprot)
+
+t1 <- read.table(paths[1], sep = "\t", header = TRUE)
+
+df_int$CTBP1_int <- (df_int$hgnc_symbol %in% t1$Official.Symbol.Interactor.B | df_int$uniprot %in% t1$SWISS.PROT.Accessions.Interactor.B)
+
+t1 <- read.table(paths[2], sep = "\t", header = TRUE, fill = TRUE)
+
+df_int$CTBP2_int <- (df_int$hgnc_symbol %in% t1$Official.Symbol.Interactor.B | df_int$uniprot %in% t1$SWISS.PROT.Accessions.Interactor.B)
+
+head(df_int)
+```
+
+Merge the interactions with the locations.
+I now have for each proteins, 10 possible locations and two known ineractors. i want to group the locations accordign to where they are in the cell, and the interactors also go together
+
+```{r}
+df_loc2 <- merge(df_loc, df_int, all.x = TRUE)
+
+df_loc2 <- df_loc2 %>%pivot_longer(cols = !c(hgnc_symbol, uniprot), names_to = "var", values_to = "present")
+
+df_loc2$var <- factor(df_loc2$var, levels = c(levels(df_loc_l$location), "CTBP1_int", "CTBP2_int"))
+
+vartypes <- c(rep("nuclear", 4), rep("cytosol", 4), rep("membrane", 2), rep("known_int", 2))
+
+names(vartypes) <- levels(df_loc2$var)
+
+df_loc2 <- df_loc2 %>% 
+  mutate(varType = vartypes[var])
+
+df_loc2$varType <- factor(df_loc2$varType, levels = c("nuclear", "cytosol", "membrane", "known_int"))
+
+```
+
+## Plot location and interactor
+
+```{r, fig.height=10, fig.width=3}
+
+ggplot(data = df_loc2%>%filter(present), aes(x = var, y = hgnc_symbol, color = varType ) )+
+  geom_point(size = 3)+
+  scale_color_manual(values = MetBrewer::met.brewer(name = "Egypt", n = 4))+
+  scale_y_discrete(limits = rev(levels(df_loc_l$hgnc_symbol)))+
+  scale_x_discrete(position = "top")+
+  theme_light()+
+  facet_grid(~varType, space = "free", scales = "free")+
+  theme(axis.text.x = element_text(angle = 90, hjust =0, vjust = 0.5), legend.position = "none", strip.background = element_blank(), strip.text = element_blank())
+
+
+ggsave("output_plots/location_ctbp12.pdf", height = 10, width = 3.3)
+
+```
+# Protein Abundance Plot
+
+Expression is of course continuous data, whereas the data above is categorical (present y/n).
+For the expression data, I have MS data (raw data is deposited on ProteomeXchange) - a dataframe with only the required columns is uploaded here as well. I will use the uniprot identifiers to extract the relevant rows.
+Note that this data is already log2 transformed.
+
+
+
+```{r}
+
+ms_input <- read.table("input_data/ms_inputDiaQuantity_MUTZ3.txt")
+
+uniprot_pattern <- paste0(name_order$uniprot, collapse = "|") 
+
+ms_input_l <- ms_input%>%
+  filter(grepl(uniprot_pattern, ProteinAccessions))%>%
+  pivot_longer(cols = c(inputA, inputB, inputC), names_to = "sample", values_to = "log2_dia")
+
+ms_input_l$Genes <- factor(ms_input_l$Genes, levels = levels(df_loc2$hgnc_symbol))
+
+# to make a heatmap scale that matches the rest of the theme
+heatm_cols <- MetBrewer::met.brewer(name = "Egypt", n = 4)
+```
+
+
+```{r, fig.height=10, fig.width=3}
+ggplot(data = ms_input_l, aes(x = sample, y = Genes, color = log2_dia ) )+
+  geom_point(aes(size = log2_dia))+
+  scale_color_gradient2(low = heatm_cols[3], mid = heatm_cols[4], high = heatm_cols[1], 
+                        limits = c(10,20), midpoint = 15)+
+  scale_y_discrete(limits = rev(levels(ms_input_l$Genes)), drop = FALSE)+
+  scale_x_discrete(position = "top")+
+  theme_light()+
+  #facet_grid(~varType, space = "free", scales = "free")+
+  theme(axis.text.x = element_text(angle = 90, hjust =0, vjust = 0.5), 
+        #legend.position = "none", 
+        strip.background = element_blank(), strip.text = element_blank())
+
+
+ggsave("output_plots/expression_inmutz.pdf", height = 10, width = 3)
+
+
+
+
+
+```
+
+
+
