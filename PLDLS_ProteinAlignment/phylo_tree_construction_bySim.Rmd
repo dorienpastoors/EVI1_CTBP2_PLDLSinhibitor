@@ -450,7 +450,7 @@ We now also want to know if these 41 proteins have previously been reported to i
 I downloaded interaction data for CTBP1 and CTBP2 in the folder biogrid (the download is from biogrid) - I will now test if the proteins in my list are mentioned in the biogrdi table. Like with the location, this will result in two new columns that says whether it is a CTBP1 and CTBP2 interactor.
 
 ```{r}
-paths <- list.files("~/protein_alignments/CTBP1_CTBP2/biogrid", full.names = TRUE)
+paths <- list.files("input_biogrid", full.names = TRUE)
 
 df_int <- data.frame(hgnc_symbol = name_order$hgnc_symbol, uniprot = name_order$uniprot)
 
