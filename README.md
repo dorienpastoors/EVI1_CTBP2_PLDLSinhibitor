@@ -19,9 +19,9 @@ This is all custom R and python code used in our manuscript:
 * the proteins are in the input_data folder, the PLDLS sites +- 15AA are in the output_tables folder
 
 ## Data availability
-* open data is available on Zenodo
+* open data is available on Zenodo [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10522532.svg)](https://doi.org/10.5281/zenodo.10522532)   or biorxiv version [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8354861.svg)](https://doi.org/10.5281/zenodo.8354861) 
 * this includes all tables for flow cytometry, luciferase measurements (in vivo and for MAPPIT assay) and mass-spec results
-* all predicted alphafold structures are available on Zenodo
+* as well as alphafold predictions and chipseq analysis
 
 ## Data availability per figure panel
 
